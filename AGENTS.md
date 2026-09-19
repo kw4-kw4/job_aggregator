@@ -32,24 +32,23 @@ Python 3.11+, aiogram 3.x, Telethon (только мониторинг Telegram)
 
 ```
 FETCH → PARSE → NORMALIZE → VALIDATE
-→ PERSIST RAW (vacancy + vacancy_sources, идемпотентно)
-→ DEDUPLICATE
-→ TEXT HARD REJECTS (дешёвые правила по нормализованному тексту)
-→ STRUCTURAL EXTRACTION (remote/office, график, зарплата, опыт, звонки, командировки…)
-→ STRUCTURAL HARD REJECTS (правила, зависящие от extraction)
-→ RELEVANCE SCORING
-→ RISK ENGINE
+→ PERSIST RAW (vacancy_sources, идемпотентно; невалидные тоже, со статусом INVALID)
+→ DEDUPLICATE (наблюдение → каноничная vacancy или DUPLICATE)
+→ ANALYZE, один раз на вакансию: STRUCTURAL EXTRACTION → RISK ENGINE
+→ EVALUATE, на пару vacancy × user: FRESHNESS → HARD REJECTS → RELEVANCE SCORING → DECISION
 → PERSIST EVALUATION
 → NOTIFICATION DECISION → NOTIFICATION QUEUE → SEND
 ```
 
-Вакансия сохраняется сразу после validate. Падение воркера не должно приводить к потере вакансии. Отклонённые и дубликаты не удаляются никогда.
+Наблюдение сохраняется сразу после validate. Падение воркера не должно приводить к потере данных. Состояние pipeline выводится из данных (PENDING, `analyzed_at IS NULL`, нет оценки), а не из памяти воркера. Отклонённые и дубликаты не удаляются никогда. Подробности: `docs/architecture.md`.
 
 ## Статусы — три независимые оси, не один enum
 
-- `vacancies.ingest_status`: NEW, PARSED, INVALID, DUPLICATE
+- `vacancy_sources.ingest_status` (на наблюдении, не на вакансии): PENDING, INVALID, CANONICAL, DUPLICATE
 - `vacancy_evaluations.decision`: PENDING, HARD_REJECTED, FILTERED, APPROVED (на пару vacancy × user)
-- `notifications.status`: QUEUED, SENDING, SENT, FAILED, SKIPPED
+- `notifications.status`: QUEUED, SENDING, SENT, UNCONFIRMED, FAILED, SKIPPED (доставка at-most-once)
+
+Переменные окружения: `BOT_TOKEN`, `OWNER_TG_ID` (бот отвечает только ему), `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `DATABASE_URL`, `TEST_DATABASE_URL`.
 
 Переходы описаны явно (таблица допустимых переходов в коде) и покрыты тестами. Недопустимый переход бросает исключение.
 
